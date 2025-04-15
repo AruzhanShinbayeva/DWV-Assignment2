@@ -1,0 +1,26 @@
+version: '3'
+
+services:
+  sender:
+    build: ./sender
+    volumes:
+      - ./sender:/app
+    depends_on:
+      - server
+    networks:
+      - traffic-network
+
+  server:
+    build: ./server
+    volumes:
+      - ./server.Dockerfile:/app
+      - ./static:/app/static
+      - ./templates:/app/templates
+    ports:
+      - "5000:5000"
+    networks:
+      - traffic-network
+
+networks:
+  traffic-network:
+    driver: bridge

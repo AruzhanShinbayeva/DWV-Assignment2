@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-geo@3"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>Traffic Location Visualization</h1>
+
+        <div class="controls">
+            <div>
+                <button id="playPause">Pause</button>
+                <button id="reset">Reset</button>
+            </div>
+            <div>
+                <label for="duration">Display Duration (sec):</label>
+                <input type="range" id="duration" min="1" max="20" value="10">
+                <span id="durationValue">10</span>
+            </div>
+        </div>
+
+        <div class="dashboard">
+            <div class="map-container" id="map"></div>
+
+            <div class="sidebar">
+                <div class="chart-container">
+                    <canvas id="timeChart"></canvas>
+                </div>
+                <h3>Top Locations</h3>
+                <div class="location-list" id="locationList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
+</body>
+</html>
