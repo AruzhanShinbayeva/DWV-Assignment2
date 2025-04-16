@@ -1,26 +1,11 @@
-version: '3'
+version: '3.8'
 
 services:
-  sender:
-    build: ./sender
-    volumes:
-      - ./sender:/app
-    depends_on:
-      - server
-    networks:
-      - traffic-network
-
-  server:
-    build: ./server
-    volumes:
-      - ./server.Dockerfile:/app
-      - ./static:/app/static
-      - ./templates:/app/templates
+  web:
+    build: .
     ports:
       - "5000:5000"
-    networks:
-      - traffic-network
-
-networks:
-  traffic-network:
-    driver: bridge
+    volumes:
+      - .:/app
+    environment:
+      FLASK_ENV: development
