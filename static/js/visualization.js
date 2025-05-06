@@ -1,6 +1,6 @@
 // Configuration
 const config = {
-    displayDuration: 10000, // 10 seconds in ms
+    displayDuration: 2000, // 10 seconds in ms
     dotSize: 6,
     dotColor: '#FF5722',
     fadeDuration: 2000 // 2 seconds fade out
@@ -14,7 +14,9 @@ let state = {
     locationCounts: {},
     timeData: Array(24).fill(0),
     currentIndex: 0,
-    lastRenderTime: 0
+    lastRenderTime: 0,
+    fetchInterval: null,
+    isFetching: false
 };
 
 // DOM Elements
@@ -38,14 +40,12 @@ const elements = {
 // Initialize the visualization
 async function init() {
     setupEventListeners();
-
     await fetchData();
-
     setupMap();
-
     setupCharts();
 
     if (state.isPlaying) {
+        startAutoRefresh();
         requestAnimationFrame(render);
     }
 }
@@ -57,55 +57,51 @@ function setupEventListeners() {
     elements.durationInput.addEventListener('input', updateDuration);
 }
 
-async function getCityFromIP(ip) {
-  try {
-    const response = await fetch(`http://ip-api.com/json/${ip}`);
-    const { city, country, status } = await response.json();
-
-    if (status !== "success") {
-      return { city: "Unknown", country: "Unknown" };
-    }
-
-    return { city, country };
-  } catch (error) {
-    console.error("Error fetching city from IP:", error);
-    return {"city": "Unknown", "country": "Unknown"};
-  }
-}
-
-// Fetch data from server
+// Fetch data from server with auto-retry
 async function fetchData() {
+    if (state.isFetching) return;
+    state.isFetching = true;
+
     try {
         const response = await fetch('/api/visualization-data');
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const rawData = await response.json();
-
         state.data = await Promise.all(rawData.map(async item => {
             const { city, country } = await getCityFromIP(item.ip);
-            return {
-                ...item,
-                city,
-                country
-            };
+            return { ...item, city, country };
         }));
+
         processData();
+        state.currentIndex = 0; // Reset rendering position
     } catch (error) {
         console.error('Error fetching data:', error);
+    } finally {
+        state.isFetching = false;
     }
 }
 
-// Process the data for visualization
+// Get city/country from IP
+async function getCityFromIP(ip) {
+    try {
+        const response = await fetch(`http://ip-api.com/json/${ip}`);
+        const { city, country, status } = await response.json();
+        return status === "success" ? { city, country } : { city: "Unknown", country: "Unknown" };
+    } catch (error) {
+        console.error("Error fetching city from IP:", error);
+        return { city: "Unknown", country: "Unknown" };
+    }
+}
+
+// Process data for visualization
 function processData() {
     state.locationCounts = {};
     state.timeData = Array(24).fill(0);
 
     state.data.forEach(item => {
-        // Count locations
         const locationKey = `${item.city}, ${item.country}`;
         state.locationCounts[locationKey] = (state.locationCounts[locationKey] || 0) + 1;
 
-        // Count by hour
         const hour = new Date(item.timestamp).getHours();
         state.timeData[hour]++;
     });
@@ -128,7 +124,6 @@ function setupMap() {
     // Load and draw world map
     d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json").then(world => {
         const countries = topojson.feature(world, world.objects.countries);
-
         svg.append("g")
             .selectAll("path")
             .data(countries.features)
@@ -153,71 +148,42 @@ function setupCharts() {
             borderWidth: 1
         }]
     };
-    elements.timeChart.options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                beginAtZero: true,
-                title: {
-                    display: true,
-                    text: 'Number of traffics'
-                }
-            },
-            x: {
-                title: {
-                    display: true,
-                    text: 'Hour of day'
-                }
-            }
-        }
-    };
     elements.timeChart.update();
 
     // Update location list
     updateLocationList();
 }
 
-// Update the top locations list
+// Update top locations list
 function updateLocationList() {
     const sortedLocations = Object.entries(state.locationCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
-    elements.locationList.innerHTML = '';
-
-    sortedLocations.forEach(([location, count]) => {
-        const div = document.createElement('div');
-        div.className = 'location-item';
-        div.innerHTML = `
+    elements.locationList.innerHTML = sortedLocations.map(([location, count]) => `
+        <div class="location-item">
             <span>${location}</span>
             <span>${count}</span>
-        `;
-        elements.locationList.appendChild(div);
-    });
+        </div>
+    `).join('');
 }
 
 // Main render loop
 function render(timestamp) {
     if (!state.isPlaying) return;
 
-    // Calculate time since last render
     const deltaTime = timestamp - state.lastRenderTime;
     state.lastRenderTime = timestamp;
 
-    // Process next batch of data
     processNextDataBatch();
-
-    // Update dots visibility based on age
     updateDotsVisibility(timestamp);
 
-    // Continue animation loop
     requestAnimationFrame(render);
 }
 
 // Process next batch of data points
 function processNextDataBatch() {
-    const batchSize = Math.ceil(state.data.length / 100); // Process ~1% of data at a time
+    const batchSize = Math.ceil(state.data.length / 100);
 
     for (let i = 0; i < batchSize && state.currentIndex < state.data.length; i++) {
         const item = state.data[state.currentIndex];
@@ -245,16 +211,18 @@ function addDot(item) {
         height: `${config.dotSize}px`,
         backgroundColor: config.dotColor,
         opacity: '1',
+        position: 'absolute',
+        borderRadius: '50%',
+        pointerEvents: 'none',
         createdAt: Date.now()
     });
 
     dot.setAttribute('title', `${item.city}, ${item.country}\n${new Date(item.timestamp).toLocaleString()}`);
-
     elements.mapContainer.appendChild(dot);
     state.dots.push(dot);
 }
 
-// Update dots visibility based on their age
+// Update dots visibility
 function updateDotsVisibility(currentTime) {
     state.dots.forEach(dot => {
         const age = currentTime - parseInt(dot.style.createdAt);
@@ -274,33 +242,40 @@ function updateDotsVisibility(currentTime) {
     );
 }
 
+// Auto-refresh control
+function startAutoRefresh() {
+    if (state.fetchInterval) clearInterval(state.fetchInterval);
+    state.fetchInterval = setInterval(async () => {
+        await fetchData();
+        resetVisualization();
+    }, config.displayDuration);
+}
+
 // Toggle play/pause
 function togglePlayPause() {
     state.isPlaying = !state.isPlaying;
     elements.playPauseBtn.textContent = state.isPlaying ? 'Pause' : 'Play';
 
     if (state.isPlaying) {
+        startAutoRefresh();
         state.lastRenderTime = performance.now();
         requestAnimationFrame(render);
+    } else {
+        clearInterval(state.fetchInterval);
+        state.fetchInterval = null;
     }
 }
 
 // Reset visualization
 function resetVisualization() {
-    // Clear all dots
     state.dots.forEach(dot => dot.remove());
     state.dots = [];
-
-    // Reset data index
     state.currentIndex = 0;
-
-    // Reset charts
     processData();
     setupCharts();
 
-    // Restart if paused
-    if (!state.isPlaying) {
-        togglePlayPause();
+    if (state.isPlaying) {
+        fetchData();
     }
 }
 
@@ -308,35 +283,11 @@ function resetVisualization() {
 function updateDuration() {
     config.displayDuration = parseInt(elements.durationInput.value) * 1000;
     elements.durationValue.textContent = elements.durationInput.value;
-}
 
-// Generate mock data for demo purposes
-function generateMockData(count) {
-    const cities = [
-        { ip: "173.198.105.40", latitude: 35.3696, longitude: -119.0105 },
-        { ip: '5.165.146.0', latitude: 56.1089, longitude: 47.4821 },
-        { ip: '70.118.96.132', latitude: 29.4227, longitude: -98.4927 },
-    ];
-
-    const data = [];
-    const now = Date.now();
-    const oneYear = 365 * 24 * 60 * 60 * 1000;
-
-    for (let i = 0; i < count; i++) {
-        const location = cities[Math.floor(Math.random() * cities.length)];
-        const timestamp = new Date(now - Math.random() * oneYear).toISOString();
-
-        data.push({
-            ...location,
-            timestamp,
-            // Add slight random variation to coordinates
-            latitude: location.latitude + (Math.random() - 0.5) * 2,
-            longitude: location.longitude + (Math.random() - 0.5) * 2
-        });
+    if (state.isPlaying) {
+        startAutoRefresh();
     }
-
-    return data;
 }
 
-// Initialize when DOM is loaded
+// Initialize
 document.addEventListener('DOMContentLoaded', init);
