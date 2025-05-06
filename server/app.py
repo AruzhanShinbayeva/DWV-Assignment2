@@ -31,7 +31,6 @@ def get_visualization_data():
 
     data = []
     for package in recent:
-        print(package)
         data.append(
             {
                 "ip": package["ip address"],
@@ -40,7 +39,7 @@ def get_visualization_data():
                 "timestamp": int(package["Timestamp"]),
             }
         )
-    return data
+    return jsonify(data)
 
 
 if __name__ == '__main__':

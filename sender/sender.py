@@ -23,7 +23,7 @@ def send_packages():
 
 
 def send_package(package):
-    requests.post('http://localhost:5000/api/packages',
+    requests.post('http://web:5000/api/packages',
                  data=json.dumps(package),
                  headers={'Content-Type': 'application/json'})
 
